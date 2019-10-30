@@ -3,13 +3,19 @@ import numpy as np
 import matplotlib.pyplot as plt
 from meep import materials
 from sinus import create_vertices
-sizex = 1
-sizey = 2
-resolution = 150
+
+sizex = 0.5  # um
+sizey = 1  # um
+sizez= 0.1 #nm
+#sizex=2
+#sizey=1
+#sizez=0
+resolution = 10000  # 150 pixels per um
 pml_th = 30 / resolution
 fullx = sizex + 2 * pml_th
 fully = sizey + 2 * pml_th
-cell = mp.Vector3(fullx, fully, 0)
+fullz = sizez +2*pml_th
+cell = mp.Vector3(fullx, fully,0 )
 mat = materials.Au
 #####################
 # run modes
@@ -27,6 +33,8 @@ saveref = True
 
 metal_vert = create_vertices(ampl=0.1, periodicity=0.5,
                              thickness=0.04, resolution=resolution, sizex=fully, y=True)
+electrode = mp.Cylinder(radius=0.5, height=0.5,
+                        center=mp.Vector3(0, 0, 0))
 ####################
 # source paraneters
 ####################
@@ -58,6 +66,7 @@ nfreq = 200
 mon_skip = sizex / 20  # small skip from PML layers
 refl_fr = mp.FluxRegion(center=mp.Vector3(-sizex / 2 +
                                           mon_skip, 0, 0), size=mp.Vector3(0, mon_height, 0))
+# flux region FFT region
 refl = sim.add_flux(cfreq, fwidth, nfreq, refl_fr)
 
 tran_fr = mp.FluxRegion(center=mp.Vector3(
@@ -71,11 +80,10 @@ if geom:
 else:
     if saveref:
         sim.run(mp.to_appended("ref", mp.at_every(0.5 / (cfreq + fwidth * 0.5),
-                                                    mp.output_efield_x, mp.output_efield_y, mp.output_efield_z)),
+                                                  mp.output_efield_x, mp.output_efield_y, mp.output_efield_z)),
                 until_after_sources=mp.stop_when_fields_decayed(10, comp, pt, 1e-2))
     else:
         sim.run(until_after_sources=mp.stop_when_fields_decayed(10, comp, pt, 1e-2))
-
 
 # for normalization run, save flux fields data for reflection plane
 straight_refl_data = sim.get_flux_data(refl)
@@ -95,19 +103,26 @@ if geom:
     # dispersive materials
     mat = mp.Medium(epsilon=5)
 
-
-geometry = [mp.Prism(metal_vert, height=100,
-                     center=mp.Vector3(0, 0, 0),
-                     axis=mp.Vector3(0, 0, 1),
-                     material=mat)]
-
+# geometry = [mp.Prism(metal_vert, height=100,
+#                     center=mp.Vector3(0, 0, 0),
+#                      axis=mp.Vector3(0, 0, 1),
+#                      material=mat)]
+spacing=0.002
+r=0.05
+geometry = [mp.Cylinder(radius=0.05, height=0.1, axis=mp.Vector3(0, 0, 1),
+                        center=mp.Vector3(0, spacing/2+r, 0),
+                        material=mat),
+            mp.Cylinder(radius=0.05, height=0.1, axis=mp.Vector3(0, 0, 1),
+                        center=mp.Vector3(0, -spacing/2-r, 0),
+                        material=mat)
+            ]
 sim = mp.Simulation(cell_size=cell,
                     boundary_layers=pml_layers,
                     geometry=geometry,
                     sources=sources,
                     resolution=resolution,
                     filename_prefix="data",
-                    split_chunks_evenly=False,)
+                    split_chunks_evenly=False, )
 
 # same monitors
 refl = sim.add_flux(cfreq, fwidth, nfreq, refl_fr)
@@ -117,12 +132,14 @@ print("starting main run")
 
 if geom:
     sim.plot2D()
+    eps_data = sim.get_array(center=mp.Vector3(), size=cell, component=mp.Dielectric)
+    plt.imshow(eps_data.transpose(), interpolation='spline36', cmap='binary')
     if mp.am_master():
         plt.show()
     exit()
 
 sim.run(mp.to_appended("norm", mp.at_every(0.5 / (cfreq + fwidth * 0.5),
-                                         mp.output_efield_x, mp.output_efield_y, mp.output_efield_z)),
+                                           mp.output_efield_x, mp.output_efield_y, mp.output_efield_z)),
         until_after_sources=mp.stop_when_fields_decayed(10, comp, pt, 1e-2))
 
 refl_flux = mp.get_fluxes(refl)
